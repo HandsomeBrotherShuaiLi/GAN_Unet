@@ -7,6 +7,10 @@ from keras.layers import BatchNormalization,PReLU,Deconvolution3D
 from keras.layers.merge import concatenate
 from keras.optimizers import Adam,SGD,RMSprop
 from utils.metrics import get_label_dice_coefficient_function,dice_coefficient
+
+"""
+TODO: figure out the best loss function and metrics
+"""
 class Original_Unet_3D(object):
     def __init__(self,image_data_format,input_shape,metrics=dice_coefficient,pool_size=(2,2,2),n_labels=4,
                  initial_lr=1e-5,deconvolution=False,depth=4,n_base_filters=32,
@@ -173,20 +177,3 @@ class Original_Unet_3D(object):
             loss=label_wise_dice_metrics,
             metrics=self.metrics
         )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
