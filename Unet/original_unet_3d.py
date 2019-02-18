@@ -6,16 +6,28 @@ from keras.layers import Conv3D,MaxPooling3D,UpSampling3D,Activation
 from keras.layers import BatchNormalization,PReLU,Deconvolution3D
 from keras.layers.merge import concatenate
 from keras.optimizers import Adam,SGD,RMSprop
-from utils.metrics import get_label_dice_coefficient_function,dice_coefficient
+from utils.metrics import get_label_dice_coefficient_function,dice_coefficient_loss,dice_coefficient
 
+K.set_image_data_format("channels_first")
 """
 TODO: figure out the best loss function and metrics
 """
 class Original_Unet_3D(object):
-    def __init__(self,image_data_format,input_shape,metrics=dice_coefficient,pool_size=(2,2,2),n_labels=4,
-                 initial_lr=1e-5,deconvolution=False,depth=4,n_base_filters=32,
-                 include_label_wise_dice_coef=False,batch_normalization=False,activation_name='sigmoid',
-                 optimizer='Adam'):
+    def __init__(self,
+                 image_data_format,
+                 input_shape,
+                 metrics=dice_coefficient,
+                 pool_size=(2,2,2),
+                 n_labels=1,
+                 initial_lr=1e-5,
+                 deconvolution=False,
+                 depth=4,
+                 n_base_filters=32,
+                 include_label_wise_dice_coef=False,
+                 batch_normalization=False,
+                 activation_name='sigmoid',
+                 optimizer='Adam'
+                 ):
         """
         init the model
         :param image_data_format:image_data_format,eg:'channels_first'如果 data_format='channels_first'， 输入 5D 张量，
@@ -69,7 +81,9 @@ class Original_Unet_3D(object):
         :param instance_normlization:
         :return:
         """
+        # print('create block shape input shape',input_layer.shape)
         layer=Conv3D(n_filters,kernel,padding=padding,strides=strides)(input_layer)
+        # print('after conv shape',layer.shape)
         if batch_normalization:
             layer=BatchNormalization(axis=1)(layer)
         elif instance_normlization:
@@ -110,27 +124,34 @@ class Original_Unet_3D(object):
         build unet 3d
         :return: unet3d model
         """
+
         input_layer=Input(self.input_shape)
         layer=input_layer
+        # print(layer.shape)
         level=[]
 
         for layer_depth in range(self.depth):
             layer1=self.create_convolution_block(
                 input_layer=layer,
                 n_filters=self.n_base_filters*(2**layer_depth),
-                batch_normalization=self.batch_normalization
+                batch_normalization=self.batch_normalization,
+                padding='same'
             )
+            # print('layer1 shape:',layer1.shape)
             layer2=self.create_convolution_block(
                 input_layer=layer1,
-                n_filters=self.n_base_filters*(2**(layer_depth+1)),
-                batch_normalization=self.batch_normalization
+                n_filters=self.n_base_filters*(2**(layer_depth))*2,
+                batch_normalization=self.batch_normalization,
+                padding='same'
             )
+            # print('layer2 shape',layer2.shape)
             if layer_depth<self.depth-1:
                 layer=MaxPooling3D(pool_size=self.pool_size)(layer2)
                 level.append([layer1,layer2,layer])
             else:
                 layer=layer2
                 level.append([layer1,layer2])
+            # print(layer.shape)
 
         for layer_depth in range(self.depth-2,-1,-1):
             up_convolution=self.get_up_convolution(
@@ -138,6 +159,8 @@ class Original_Unet_3D(object):
                 deconvolution=self.deconvolution,
                 n_filtes=layer._keras_shape[1]
             )(layer)
+            # print('up_convolution shape',up_convolution.shape)
+            # print('level layerdepth',level[layer_depth][1].shape)
             concat=concatenate([up_convolution,level[layer_depth][1]],axis=1)
             layer=self.create_convolution_block(
                 n_filters=level[layer_depth][1]._keras_shape[1],
@@ -172,8 +195,22 @@ class Original_Unet_3D(object):
             'SGD':SGD,
             'RMSprop':RMSprop
         }
-        return model.compile(
+        #我使用的是dice_coefficient,2*|pred∩true|/(|pred|+|true|+smooth)
+        #smooth平滑系数
+        model.compile(
             optimizer=res[self.optimizer](lr=self.initial_lr),
             loss=label_wise_dice_metrics,
             metrics=self.metrics
         )
+        return model
+
+if __name__=='__main__':
+    m = Original_Unet_3D(
+        input_shape=(256,256,256,45),
+        image_data_format='channels_first',
+        n_labels=1,
+        depth=4,
+        n_base_filters=32
+    ).model()
+    print(m.summary())
+
